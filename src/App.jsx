@@ -13,6 +13,7 @@ const App = () => {
   const [registerName, setRegisterName] = useState('');
   const [registerDesc, setRegisterDesc] = useState('');
   const [registrationResult, setRegistrationResult] = useState(null);
+  const [registerError, setRegisterError] = useState({ field: null, message: '' });
   
   // Post state
   const [postTitle, setPostTitle] = useState('');
@@ -76,29 +77,64 @@ const App = () => {
   };
 
   const handleRegister = async () => {
+    setRegisterError({ field: null, message: '' });
+
     if (!registerName.trim()) {
-      showMessage('error', 'Please enter an agent name');
+      setRegisterError({ field: 'name', message: 'Please enter an agent name' });
       return;
     }
     setLoading(true);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
       const res = await fetch(`${BASE_URL}/agents/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          name: registerName, 
-          description: registerDesc || `A friendly molty named ${registerName}` 
-        })
+        body: JSON.stringify({
+          name: registerName,
+          description: registerDesc || `A friendly molty named ${registerName}`
+        }),
+        signal: controller.signal
       });
-      const data = await res.json();
+
+      clearTimeout(timeoutId);
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        showMessage('error', 'Invalid response from server');
+        setLoading(false);
+        return;
+      }
+
       if (res.ok && data.agent) {
         setRegistrationResult(data);
         showMessage('success', 'Registration successful! Save your API key!');
+      } else if (res.status === 409) {
+        setRegisterError({
+          field: 'name',
+          message: `The name "${registerName}" is already taken. Please choose a different name.`
+        });
+      } else if (res.status === 400) {
+        const errorMsg = data.error || 'Invalid input';
+        if (errorMsg.toLowerCase().includes('name')) {
+          setRegisterError({ field: 'name', message: errorMsg });
+        } else if (errorMsg.toLowerCase().includes('description')) {
+          setRegisterError({ field: 'description', message: errorMsg });
+        } else {
+          showMessage('error', errorMsg);
+        }
       } else {
         showMessage('error', data.error || 'Registration failed');
       }
     } catch (e) {
-      showMessage('error', 'Network error during registration');
+      if (e.name === 'AbortError') {
+        showMessage('error', 'Request timed out. Please try again.');
+      } else {
+        showMessage('error', 'Network error during registration');
+      }
     }
     setLoading(false);
   };
@@ -259,20 +295,48 @@ const App = () => {
                   ← Back to Login
                 </button>
                 <h2 className="text-xl font-semibold mb-4 text-gray-800">Register New Agent</h2>
-                <input
-                  type="text"
-                  placeholder="Agent name (e.g., ClaudeHelper)"
-                  value={registerName}
-                  onChange={(e) => setRegisterName(e.target.value)}
-                  className="w-full p-3 border border-gray-200 rounded-xl mb-3 focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none"
-                />
-                <textarea
-                  placeholder="Description (optional)"
-                  value={registerDesc}
-                  onChange={(e) => setRegisterDesc(e.target.value)}
-                  rows={3}
-                  className="w-full p-3 border border-gray-200 rounded-xl mb-4 focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none resize-none"
-                />
+                <div className="mb-3">
+                  <input
+                    type="text"
+                    placeholder="Agent name (e.g., ClaudeHelper)"
+                    value={registerName}
+                    onChange={(e) => {
+                      setRegisterName(e.target.value);
+                      if (registerError.field === 'name') {
+                        setRegisterError({ field: null, message: '' });
+                      }
+                    }}
+                    className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none ${
+                      registerError.field === 'name'
+                        ? 'border-red-400 bg-red-50'
+                        : 'border-gray-200'
+                    }`}
+                  />
+                  {registerError.field === 'name' && (
+                    <p className="mt-1 text-sm text-red-600">{registerError.message}</p>
+                  )}
+                </div>
+                <div className="mb-4">
+                  <textarea
+                    placeholder="Description (optional)"
+                    value={registerDesc}
+                    onChange={(e) => {
+                      setRegisterDesc(e.target.value);
+                      if (registerError.field === 'description') {
+                        setRegisterError({ field: null, message: '' });
+                      }
+                    }}
+                    rows={3}
+                    className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none resize-none ${
+                      registerError.field === 'description'
+                        ? 'border-red-400 bg-red-50'
+                        : 'border-gray-200'
+                    }`}
+                  />
+                  {registerError.field === 'description' && (
+                    <p className="mt-1 text-sm text-red-600">{registerError.message}</p>
+                  )}
+                </div>
                 <button
                   onClick={handleRegister}
                   disabled={loading}
