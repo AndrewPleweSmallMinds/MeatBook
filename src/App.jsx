@@ -23,7 +23,7 @@ const App = () => {
   const [postType, setPostType] = useState('text');
 
   // Feed and comments state
-  const [activeTab, setActiveTab] = useState('create'); // 'create', 'feed', or 'myposts'
+  const [activeTab, setActiveTab] = useState('create'); // 'create', 'feed', 'myposts', or 'communities'
   const [posts, setPosts] = useState([]);
   const [selectedPost, setSelectedPost] = useState(null);
   const [comments, setComments] = useState([]);
@@ -39,6 +39,11 @@ const App = () => {
   // My Posts state
   const [myPosts, setMyPosts] = useState([]);
   const [loadingMyPosts, setLoadingMyPosts] = useState(false);
+
+  // Communities pagination state
+  const [submoltsPage, setSubmoltsPage] = useState(1);
+  const [hasMoreSubmolts, setHasMoreSubmolts] = useState(true);
+  const [loadingMoreSubmolts, setLoadingMoreSubmolts] = useState(false);
 
   const BASE_URL = 'https://www.moltbook.com/api/v1';
 
@@ -88,14 +93,20 @@ const App = () => {
     }
   };
 
-  const fetchSubmolts = async (key) => {
-    console.log('[API] fetchSubmolts: Starting request to /submolts');
+  const fetchSubmolts = async (key, page = 1, append = false) => {
+    const limit = 50;
+    const offset = (page - 1) * limit;
+    console.log(`[API] fetchSubmolts: Starting request to /submolts (page=${page}, offset=${offset})`);
+
+    if (append) {
+      setLoadingMoreSubmolts(true);
+    }
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000);
 
-      // Request a high limit to get all submolts
-      const res = await fetch(`${BASE_URL}/submolts?limit=100`, {
+      const res = await fetch(`${BASE_URL}/submolts?limit=${limit}&offset=${offset}`, {
         headers: { 'Authorization': `Bearer ${key}` },
         signal: controller.signal
       });
@@ -107,8 +118,16 @@ const App = () => {
         const data = await res.json();
         console.log('[API] fetchSubmolts: Success, received', data);
         const submoltsList = data.submolts || data.data || [];
-        console.log('[API] fetchSubmolts: Found', submoltsList.length, 'submolts:', submoltsList.map(s => s.name));
-        setSubmolts(submoltsList);
+        console.log('[API] fetchSubmolts: Found', submoltsList.length, 'submolts');
+
+        if (append) {
+          setSubmolts(prev => [...prev, ...submoltsList]);
+        } else {
+          setSubmolts(submoltsList);
+        }
+
+        setHasMoreSubmolts(submoltsList.length >= limit);
+        setSubmoltsPage(page);
       } else {
         console.log('[API] fetchSubmolts: Failed - response not ok');
       }
@@ -118,6 +137,7 @@ const App = () => {
         showMessage('error', 'Request timed out while fetching submolts.');
       }
     }
+    setLoadingMoreSubmolts(false);
   };
 
   const handleLogin = async () => {
@@ -693,6 +713,16 @@ const App = () => {
               >
                 👤 My Posts
               </button>
+              <button
+                onClick={() => setActiveTab('communities')}
+                className={`flex-1 py-2 rounded-xl font-medium transition-all text-sm ${
+                  activeTab === 'communities'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-orange-100'
+                }`}
+              >
+                🏘️ Communities
+              </button>
             </div>
 
             {activeTab === 'create' ? (
@@ -1071,6 +1101,100 @@ const App = () => {
                     <p className="text-center text-gray-500 text-xs mt-4">
                       Showing your {myPosts.length} most recent posts
                     </p>
+                  </>
+                )}
+              </div>
+            ) : activeTab === 'communities' ? (
+              /* Communities View */
+              <div className="bg-white rounded-2xl shadow-xl p-6 border border-orange-100">
+                <div className="mb-6">
+                  <h2 className="text-xl font-semibold text-gray-800">Communities</h2>
+                  <p className="text-gray-500 text-sm mt-1">Discover where AI agents gather to share and discuss</p>
+                </div>
+
+                {submolts.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">Loading communities...</p>
+                ) : (
+                  <>
+                    <div className="grid gap-3">
+                      {submolts.map((submolt) => (
+                        <div
+                          key={submolt.name}
+                          className="p-4 border border-gray-100 rounded-xl hover:border-orange-200 hover:bg-orange-50 transition-all"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-semibold text-gray-800">m/{submolt.name}</h3>
+                                {submolt.your_role && (
+                                  <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">
+                                    {submolt.your_role}
+                                  </span>
+                                )}
+                              </div>
+                              {submolt.display_name && submolt.display_name !== submolt.name && (
+                                <p className="text-sm text-gray-600 mt-0.5">{submolt.display_name}</p>
+                              )}
+                              {submolt.description && (
+                                <p className="text-sm text-gray-500 mt-1 line-clamp-2">{submolt.description}</p>
+                              )}
+                              <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                {submolt.member_count !== undefined && (
+                                  <span>👥 {submolt.member_count} members</span>
+                                )}
+                                {submolt.post_count !== undefined && (
+                                  <span>📝 {submolt.post_count} posts</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-2 ml-3">
+                              <button
+                                onClick={() => {
+                                  setFeedSubmolt(submolt.name);
+                                  setFeedPage(1);
+                                  setHasMorePosts(true);
+                                  setActiveTab('feed');
+                                  fetchPosts(feedSort, submolt.name, 1, false);
+                                }}
+                                className="text-xs bg-orange-500 text-white px-3 py-1.5 rounded-lg hover:bg-orange-600 transition-all whitespace-nowrap"
+                              >
+                                View Posts
+                              </button>
+                              <a
+                                href={`https://www.moltbook.com/m/${submolt.name}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-orange-500 hover:text-orange-600 text-center"
+                              >
+                                Open →
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Load More Button */}
+                    {hasMoreSubmolts && (
+                      <div className="mt-4 text-center">
+                        <button
+                          onClick={() => fetchSubmolts(apiKey, submoltsPage + 1, true)}
+                          disabled={loadingMoreSubmolts}
+                          className="bg-gray-100 text-gray-700 px-6 py-2 rounded-xl font-medium hover:bg-gray-200 transition-all disabled:opacity-50"
+                        >
+                          {loadingMoreSubmolts ? 'Loading...' : 'Load More Communities'}
+                        </button>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Showing {submolts.length} communities (page {submoltsPage})
+                        </p>
+                      </div>
+                    )}
+
+                    {!hasMoreSubmolts && submolts.length > 0 && (
+                      <p className="text-center text-gray-500 text-sm mt-4">
+                        All {submolts.length} communities loaded
+                      </p>
+                    )}
                   </>
                 )}
               </div>
