@@ -30,36 +30,77 @@ const App = () => {
   };
 
   const fetchAgentInfo = async (key) => {
+    console.log('[API] fetchAgentInfo: Starting request to /agents/me');
+    console.log('[API] fetchAgentInfo: API key length:', key?.length, 'starts with:', key?.substring(0, 15));
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
+
+      const headers = { 'Authorization': `Bearer ${key}` };
+      console.log('[API] fetchAgentInfo: Headers:', JSON.stringify(headers));
+
       const res = await fetch(`${BASE_URL}/agents/me`, {
-        headers: { 'Authorization': `Bearer ${key}` }
+        headers,
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
+      console.log(`[API] fetchAgentInfo: Response status ${res.status}`);
+
       if (res.ok) {
         const data = await res.json();
+        console.log('[API] fetchAgentInfo: Success', data);
         setAgentInfo(data.agent || data);
         return true;
       }
+      let errorData;
+      try {
+        errorData = await res.json();
+      } catch {
+        errorData = null;
+      }
+      console.log(`[API] fetchAgentInfo: Failed - status ${res.status}`, errorData);
       return false;
     } catch (e) {
+      console.error('[API] fetchAgentInfo: Error', e.name, e.message);
+      if (e.name === 'AbortError') {
+        showMessage('error', 'Request timed out. Please try again.');
+      }
       return false;
     }
   };
 
   const fetchSubmolts = async (key) => {
+    console.log('[API] fetchSubmolts: Starting request to /submolts');
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
+
       const res = await fetch(`${BASE_URL}/submolts`, {
-        headers: { 'Authorization': `Bearer ${key}` }
+        headers: { 'Authorization': `Bearer ${key}` },
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
+      console.log(`[API] fetchSubmolts: Response status ${res.status}`);
+
       if (res.ok) {
         const data = await res.json();
+        console.log('[API] fetchSubmolts: Success', data);
         setSubmolts(data.submolts || data.data || []);
+      } else {
+        console.log('[API] fetchSubmolts: Failed - response not ok');
       }
     } catch (e) {
-      console.error('Failed to fetch submolts');
+      console.error('[API] fetchSubmolts: Error', e.name, e.message);
+      if (e.name === 'AbortError') {
+        showMessage('error', 'Request timed out while fetching submolts.');
+      }
     }
   };
 
   const handleLogin = async () => {
+    console.log('[UI] handleLogin: Starting login');
     if (!apiKey.trim()) {
       showMessage('error', 'Please enter your API key');
       return;
@@ -67,16 +108,20 @@ const App = () => {
     setLoading(true);
     const success = await fetchAgentInfo(apiKey);
     if (success) {
+      console.log('[UI] handleLogin: Agent info fetched, now fetching submolts');
       setIsAuthenticated(true);
       await fetchSubmolts(apiKey);
+      console.log('[UI] handleLogin: Login complete');
       showMessage('success', 'Logged in successfully! 🦞');
     } else {
+      console.log('[UI] handleLogin: Login failed - invalid API key');
       showMessage('error', 'Invalid API key. Make sure to include the full key starting with "moltbook_"');
     }
     setLoading(false);
   };
 
   const handleRegister = async () => {
+    console.log('[UI] handleRegister: Starting registration for', registerName);
     setRegisterError({ field: null, message: '' });
 
     if (!registerName.trim()) {
@@ -86,8 +131,9 @@ const App = () => {
     setLoading(true);
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
 
+      console.log('[API] handleRegister: Sending POST to /agents/register');
       const res = await fetch(`${BASE_URL}/agents/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,25 +145,31 @@ const App = () => {
       });
 
       clearTimeout(timeoutId);
+      console.log(`[API] handleRegister: Response status ${res.status}`);
 
       let data;
       try {
         data = await res.json();
+        console.log('[API] handleRegister: Response data', data);
       } catch {
+        console.error('[API] handleRegister: Failed to parse JSON response');
         showMessage('error', 'Invalid response from server');
         setLoading(false);
         return;
       }
 
       if (res.ok && data.agent) {
+        console.log('[UI] handleRegister: Registration successful');
         setRegistrationResult(data);
         showMessage('success', 'Registration successful! Save your API key!');
       } else if (res.status === 409) {
+        console.log('[UI] handleRegister: Name conflict (409)');
         setRegisterError({
           field: 'name',
           message: `The name "${registerName}" is already taken. Please choose a different name.`
         });
       } else if (res.status === 400) {
+        console.log('[UI] handleRegister: Bad request (400)');
         const errorMsg = data.error || 'Invalid input';
         if (errorMsg.toLowerCase().includes('name')) {
           setRegisterError({ field: 'name', message: errorMsg });
@@ -127,9 +179,11 @@ const App = () => {
           showMessage('error', errorMsg);
         }
       } else {
+        console.log('[UI] handleRegister: Other error', data.error);
         showMessage('error', data.error || 'Registration failed');
       }
     } catch (e) {
+      console.error('[API] handleRegister: Error', e.name, e.message);
       if (e.name === 'AbortError') {
         showMessage('error', 'Request timed out. Please try again.');
       } else {
@@ -140,6 +194,7 @@ const App = () => {
   };
 
   const handlePost = async () => {
+    console.log('[UI] handlePost: Starting post creation');
     if (!postTitle.trim()) {
       showMessage('error', 'Please enter a title');
       return;
@@ -165,6 +220,7 @@ const App = () => {
         body.url = postUrl;
       }
 
+      console.log('[API] handlePost: Sending POST to /posts', body);
       const res = await fetch(`${BASE_URL}/posts`, {
         method: 'POST',
         headers: {
@@ -173,19 +229,25 @@ const App = () => {
         },
         body: JSON.stringify(body)
       });
+      console.log(`[API] handlePost: Response status ${res.status}`);
       const data = await res.json();
-      
+      console.log('[API] handlePost: Response data', data);
+
       if (res.ok && data.success !== false) {
+        console.log('[UI] handlePost: Post created successfully');
         showMessage('success', '🦞 Post published successfully!');
         setPostTitle('');
         setPostContent('');
         setPostUrl('');
       } else if (res.status === 429) {
+        console.log('[UI] handlePost: Rate limited (429)');
         showMessage('error', `Rate limited. Try again in ${data.retry_after_minutes || 30} minutes.`);
       } else {
+        console.log('[UI] handlePost: Failed', data.error || data.hint);
         showMessage('error', data.error || data.hint || 'Failed to create post');
       }
     } catch (e) {
+      console.error('[API] handlePost: Error', e.name, e.message);
       showMessage('error', 'Network error while posting');
     }
     setLoading(false);
