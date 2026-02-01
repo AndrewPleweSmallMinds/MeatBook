@@ -38,10 +38,7 @@ const App = () => {
 
   // My Posts state
   const [myPosts, setMyPosts] = useState([]);
-  const [myPostsPage, setMyPostsPage] = useState(1);
-  const [hasMoreMyPosts, setHasMoreMyPosts] = useState(true);
   const [loadingMyPosts, setLoadingMyPosts] = useState(false);
-  const [loadingMoreMyPosts, setLoadingMoreMyPosts] = useState(false);
 
   const BASE_URL = 'https://www.moltbook.com/api/v1';
 
@@ -431,28 +428,20 @@ const App = () => {
     setCommentContent('');
   };
 
-  const fetchMyPosts = async (page = 1, append = false) => {
+  const fetchMyPosts = async () => {
     if (!agentInfo?.name) {
       console.log('[API] fetchMyPosts: No agent name available');
       return;
     }
 
-    const offset = (page - 1) * 20;
-    console.log(`[API] fetchMyPosts: Starting request for agent ${agentInfo.name} (page=${page}, offset=${offset})`);
-
-    if (append) {
-      setLoadingMoreMyPosts(true);
-    } else {
-      setLoadingMyPosts(true);
-    }
+    console.log(`[API] fetchMyPosts: Starting request for agent ${agentInfo.name}`);
+    setLoadingMyPosts(true);
 
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000);
 
-      const params = new URLSearchParams({ limit: '20', offset: String(offset) });
-
-      const res = await fetch(`${BASE_URL}/agents/${agentInfo.name}/posts?${params}`, {
+      const res = await fetch(`${BASE_URL}/agents/profile?name=${encodeURIComponent(agentInfo.name)}`, {
         headers: { 'Authorization': `Bearer ${apiKey}` },
         signal: controller.signal
       });
@@ -463,16 +452,9 @@ const App = () => {
       if (res.ok) {
         const data = await res.json();
         console.log('[API] fetchMyPosts: Success', data);
-        const newPosts = data.posts || data.data || [];
-
-        if (append) {
-          setMyPosts(prevPosts => [...prevPosts, ...newPosts]);
-        } else {
-          setMyPosts(newPosts);
-        }
-
-        setHasMoreMyPosts(newPosts.length >= 20);
-        setMyPostsPage(page);
+        const recentPosts = data.agent?.recentPosts || data.recentPosts || [];
+        setMyPosts(recentPosts);
+        // Profile endpoint returns limited recent posts, no pagination
       } else {
         console.log('[API] fetchMyPosts: Failed');
         showMessage('error', 'Failed to load your posts');
@@ -484,7 +466,6 @@ const App = () => {
       }
     }
     setLoadingMyPosts(false);
-    setLoadingMoreMyPosts(false);
   };
 
   const handleLogout = () => {
@@ -498,8 +479,6 @@ const App = () => {
     setComments([]);
     setActiveTab('create');
     setMyPosts([]);
-    setMyPostsPage(1);
-    setHasMoreMyPosts(true);
   };
 
   return (
@@ -1086,27 +1065,9 @@ const App = () => {
                       ))}
                     </div>
 
-                    {/* Load More Button */}
-                    {hasMoreMyPosts && (
-                      <div className="mt-4 text-center">
-                        <button
-                          onClick={() => fetchMyPosts(myPostsPage + 1, true)}
-                          disabled={loadingMoreMyPosts}
-                          className="bg-gray-100 text-gray-700 px-6 py-2 rounded-xl font-medium hover:bg-gray-200 transition-all disabled:opacity-50"
-                        >
-                          {loadingMoreMyPosts ? 'Loading...' : 'Load More Posts'}
-                        </button>
-                        <p className="text-xs text-gray-500 mt-2">
-                          Showing {myPosts.length} posts (page {myPostsPage})
-                        </p>
-                      </div>
-                    )}
-
-                    {!hasMoreMyPosts && myPosts.length > 0 && (
-                      <p className="text-center text-gray-500 text-sm mt-4">
-                        No more posts to load
-                      </p>
-                    )}
+                    <p className="text-center text-gray-500 text-xs mt-4">
+                      Showing your {myPosts.length} most recent posts
+                    </p>
                   </>
                 )}
               </div>
