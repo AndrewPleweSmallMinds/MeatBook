@@ -22,6 +22,17 @@ const App = () => {
   const [postUrl, setPostUrl] = useState('');
   const [postType, setPostType] = useState('text');
 
+  // Feed and comments state
+  const [activeTab, setActiveTab] = useState('create'); // 'create' or 'feed'
+  const [posts, setPosts] = useState([]);
+  const [selectedPost, setSelectedPost] = useState(null);
+  const [comments, setComments] = useState([]);
+  const [commentContent, setCommentContent] = useState('');
+  const [loadingFeed, setLoadingFeed] = useState(false);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [feedSort, setFeedSort] = useState('hot'); // 'hot', 'new', 'top'
+  const [feedSubmolt, setFeedSubmolt] = useState(''); // '' for all, or specific submolt name
+
   const BASE_URL = 'https://www.moltbook.com/api/v1';
 
   const showMessage = (type, text) => {
@@ -253,12 +264,147 @@ const App = () => {
     setLoading(false);
   };
 
+  const fetchPosts = async (sort = feedSort, submolt = feedSubmolt) => {
+    console.log(`[API] fetchPosts: Starting request to /posts (sort=${sort}, submolt=${submolt || 'all'})`);
+    setLoadingFeed(true);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
+
+      const params = new URLSearchParams({ limit: '20', sort });
+      if (submolt) params.append('submolt', submolt);
+
+      const res = await fetch(`${BASE_URL}/posts?${params}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      console.log(`[API] fetchPosts: Response status ${res.status}`);
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log('[API] fetchPosts: Success', data);
+        setPosts(data.posts || data.data || []);
+      } else {
+        console.log('[API] fetchPosts: Failed');
+        showMessage('error', 'Failed to load posts');
+      }
+    } catch (e) {
+      console.error('[API] fetchPosts: Error', e.name, e.message);
+      if (e.name === 'AbortError') {
+        showMessage('error', 'Request timed out while loading posts.');
+      }
+    }
+    setLoadingFeed(false);
+  };
+
+  const fetchComments = async (postId) => {
+    console.log(`[API] fetchComments: Starting request for post ${postId}`);
+    setLoadingComments(true);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
+
+      const res = await fetch(`${BASE_URL}/posts/${postId}/comments`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      console.log(`[API] fetchComments: Response status ${res.status}`);
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log('[API] fetchComments: Success', data);
+        setComments(data.comments || data.data || []);
+      } else {
+        console.log('[API] fetchComments: Failed');
+        setComments([]);
+      }
+    } catch (e) {
+      console.error('[API] fetchComments: Error', e.name, e.message);
+      setComments([]);
+    }
+    setLoadingComments(false);
+  };
+
+  const handleAddComment = async () => {
+    if (!commentContent.trim()) {
+      showMessage('error', 'Please enter a comment');
+      return;
+    }
+    if (!selectedPost) return;
+
+    console.log(`[API] handleAddComment: Adding comment to post ${selectedPost.id}`);
+    console.log('[API] handleAddComment: API key present:', !!apiKey, 'length:', apiKey?.length);
+    setLoading(true);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
+
+      const headers = {
+        'Authorization': `Bearer ${apiKey}`,
+        'X-API-Key': apiKey,
+        'Content-Type': 'application/json'
+      };
+      console.log('[API] handleAddComment: Headers:', JSON.stringify(headers));
+
+      const res = await fetch(`${BASE_URL}/posts/${selectedPost.id}/comments`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ content: commentContent }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      console.log(`[API] handleAddComment: Response status ${res.status}`);
+      const data = await res.json();
+      console.log('[API] handleAddComment: Response data', data);
+
+      if (res.ok) {
+        showMessage('success', 'Comment posted!');
+        setCommentContent('');
+        fetchComments(selectedPost.id);
+      } else if (res.status === 429) {
+        showMessage('error', `Rate limited. Try again in ${data.retry_after_seconds || 20} seconds.`);
+      } else if (res.status === 401) {
+        showMessage('error', 'Authentication failed. Your session may have expired. Please log out and log in again.');
+      } else {
+        showMessage('error', data.error || 'Failed to post comment');
+      }
+    } catch (e) {
+      console.error('[API] handleAddComment: Error', e.name, e.message);
+      if (e.name === 'AbortError') {
+        showMessage('error', 'Request timed out.');
+      } else {
+        showMessage('error', 'Network error while posting comment');
+      }
+    }
+    setLoading(false);
+  };
+
+  const openPost = async (post) => {
+    setSelectedPost(post);
+    await fetchComments(post.id);
+  };
+
+  const closePost = () => {
+    setSelectedPost(null);
+    setComments([]);
+    setCommentContent('');
+  };
+
   const handleLogout = () => {
     setApiKey('');
     setIsAuthenticated(false);
     setAgentInfo(null);
     setSubmolts([]);
     setRegistrationResult(null);
+    setPosts([]);
+    setSelectedPost(null);
+    setComments([]);
+    setActiveTab('create');
   };
 
   return (
@@ -432,98 +578,305 @@ const App = () => {
               </div>
             </div>
 
-            {/* Create Post */}
-            <div className="bg-white rounded-2xl shadow-xl p-6 border border-orange-100">
-              <h2 className="text-xl font-semibold mb-4 text-gray-800">Create a Post</h2>
-              
-              {/* Post Type Toggle */}
-              <div className="flex gap-2 mb-4">
-                <button
-                  onClick={() => setPostType('text')}
-                  className={`flex-1 py-2 rounded-xl font-medium transition-all ${
-                    postType === 'text'
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  📝 Text Post
-                </button>
-                <button
-                  onClick={() => setPostType('link')}
-                  className={`flex-1 py-2 rounded-xl font-medium transition-all ${
-                    postType === 'link'
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  🔗 Link Post
-                </button>
-              </div>
+            {/* Tab Navigation */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setActiveTab('create')}
+                className={`flex-1 py-2 rounded-xl font-medium transition-all ${
+                  activeTab === 'create'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-orange-100'
+                }`}
+              >
+                📝 Create Post
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('feed');
+                  if (posts.length === 0) fetchPosts(feedSort, feedSubmolt);
+                }}
+                className={`flex-1 py-2 rounded-xl font-medium transition-all ${
+                  activeTab === 'feed'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-orange-100'
+                }`}
+              >
+                📰 Browse Feed
+              </button>
+            </div>
 
-              {/* Submolt Select */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Submolt</label>
-                <select
-                  value={postSubmolt}
-                  onChange={(e) => setPostSubmolt(e.target.value)}
-                  className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white"
-                >
-                  <option value="general">m/general</option>
-                  {submolts.filter(s => s.name !== 'general').map(s => (
-                    <option key={s.name} value={s.name}>m/{s.name}</option>
-                  ))}
-                </select>
-              </div>
+            {activeTab === 'create' ? (
+              /* Create Post */
+              <div className="bg-white rounded-2xl shadow-xl p-6 border border-orange-100">
+                <h2 className="text-xl font-semibold mb-4 text-gray-800">Create a Post</h2>
 
-              {/* Title */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                <input
-                  type="text"
-                  placeholder="An interesting title..."
-                  value={postTitle}
-                  onChange={(e) => setPostTitle(e.target.value)}
-                  className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none"
-                />
-              </div>
-
-              {/* Content or URL based on post type */}
-              {postType === 'text' ? (
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Content</label>
-                  <textarea
-                    placeholder="What's on your mind?"
-                    value={postContent}
-                    onChange={(e) => setPostContent(e.target.value)}
-                    rows={5}
-                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none resize-none"
-                  />
+                {/* Post Type Toggle */}
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={() => setPostType('text')}
+                    className={`flex-1 py-2 rounded-xl font-medium transition-all ${
+                      postType === 'text'
+                        ? 'bg-orange-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    📝 Text Post
+                  </button>
+                  <button
+                    onClick={() => setPostType('link')}
+                    className={`flex-1 py-2 rounded-xl font-medium transition-all ${
+                      postType === 'link'
+                        ? 'bg-orange-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    🔗 Link Post
+                  </button>
                 </div>
-              ) : (
+
+                {/* Submolt Select */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Submolt</label>
+                  <select
+                    value={postSubmolt}
+                    onChange={(e) => setPostSubmolt(e.target.value)}
+                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white"
+                  >
+                    <option value="general">m/general</option>
+                    {submolts.filter(s => s.name !== 'general').map(s => (
+                      <option key={s.name} value={s.name}>m/{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Title */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
                   <input
-                    type="url"
-                    placeholder="https://..."
-                    value={postUrl}
-                    onChange={(e) => setPostUrl(e.target.value)}
+                    type="text"
+                    placeholder="An interesting title..."
+                    value={postTitle}
+                    onChange={(e) => setPostTitle(e.target.value)}
                     className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none"
                   />
                 </div>
-              )}
 
-              <button
-                onClick={handlePost}
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-xl font-semibold hover:from-orange-600 hover:to-red-600 transition-all disabled:opacity-50 shadow-lg"
-              >
-                {loading ? 'Posting...' : 'Post to Moltbook 🦞'}
-              </button>
+                {/* Content or URL based on post type */}
+                {postType === 'text' ? (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Content</label>
+                    <textarea
+                      placeholder="What's on your mind?"
+                      value={postContent}
+                      onChange={(e) => setPostContent(e.target.value)}
+                      rows={5}
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none resize-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={postUrl}
+                      onChange={(e) => setPostUrl(e.target.value)}
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none"
+                    />
+                  </div>
+                )}
 
-              <p className="text-xs text-gray-500 mt-3 text-center">
-                Note: You can only post once every 30 minutes
-              </p>
-            </div>
+                <button
+                  onClick={handlePost}
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-xl font-semibold hover:from-orange-600 hover:to-red-600 transition-all disabled:opacity-50 shadow-lg"
+                >
+                  {loading ? 'Posting...' : 'Post to Moltbook 🦞'}
+                </button>
+
+                <p className="text-xs text-gray-500 mt-3 text-center">
+                  Note: You can only post once every 30 minutes
+                </p>
+              </div>
+            ) : selectedPost ? (
+              /* Post Detail View with Comments */
+              <div className="bg-white rounded-2xl shadow-xl p-6 border border-orange-100">
+                <button
+                  onClick={closePost}
+                  className="text-gray-500 hover:text-gray-700 mb-4"
+                >
+                  ← Back to Feed
+                </button>
+
+                {/* Post Content */}
+                <div className="border-b border-gray-100 pb-4 mb-4">
+                  <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+                    <span className="font-medium text-orange-600">m/{typeof selectedPost.submolt === 'object' ? selectedPost.submolt?.name : selectedPost.submolt}</span>
+                    <span>•</span>
+                    <span>by {selectedPost.author?.display_name || selectedPost.author?.name || (typeof selectedPost.author === 'string' ? selectedPost.author : 'Unknown')}</span>
+                  </div>
+                  <h2 className="text-xl font-semibold text-gray-800 mb-2">{selectedPost.title}</h2>
+                  {selectedPost.content && (
+                    <p className="text-gray-700 whitespace-pre-wrap">{selectedPost.content}</p>
+                  )}
+                  {selectedPost.url && (
+                    <a
+                      href={selectedPost.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline break-all"
+                    >
+                      {selectedPost.url}
+                    </a>
+                  )}
+                  <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
+                    <span>👍 {selectedPost.upvotes || 0}</span>
+                    <span>👎 {selectedPost.downvotes || 0}</span>
+                    <span>💬 {selectedPost.comment_count || 0}</span>
+                  </div>
+                </div>
+
+                {/* Add Comment Form */}
+                <div className="mb-4">
+                  <h3 className="font-semibold text-gray-800 mb-2">Add a Comment</h3>
+                  <textarea
+                    placeholder="Write your comment..."
+                    value={commentContent}
+                    onChange={(e) => setCommentContent(e.target.value)}
+                    rows={3}
+                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none resize-none mb-2"
+                  />
+                  <button
+                    onClick={handleAddComment}
+                    disabled={loading || !commentContent.trim()}
+                    className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-2 rounded-xl font-semibold hover:from-orange-600 hover:to-red-600 transition-all disabled:opacity-50"
+                  >
+                    {loading ? 'Posting...' : 'Post Comment'}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Rate limit: 1 comment per 20 seconds, max 50/day
+                  </p>
+                </div>
+
+                {/* Comments List */}
+                <div>
+                  <h3 className="font-semibold text-gray-800 mb-3">
+                    Comments {loadingComments && '(loading...)'}
+                  </h3>
+                  {comments.length === 0 && !loadingComments ? (
+                    <p className="text-gray-500 text-sm">No comments yet. Be the first to comment!</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {comments.map((comment) => (
+                        <div key={comment.id} className="bg-gray-50 rounded-xl p-3">
+                          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
+                            <span className="font-medium text-gray-700">
+                              {comment.author?.display_name || comment.author?.name || (typeof comment.author === 'string' ? comment.author : 'Unknown')}
+                            </span>
+                            <span>•</span>
+                            <span>{comment.created_at ? new Date(comment.created_at).toLocaleDateString() : ''}</span>
+                          </div>
+                          <p className="text-gray-700">{comment.content}</p>
+                          <div className="mt-1 text-sm text-gray-500">
+                            👍 {comment.upvotes || 0}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Feed View */
+              <div className="bg-white rounded-2xl shadow-xl p-6 border border-orange-100">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-gray-800">Feed</h2>
+                  <button
+                    onClick={() => fetchPosts()}
+                    disabled={loadingFeed}
+                    className="text-orange-500 hover:text-orange-600 text-sm font-medium"
+                  >
+                    {loadingFeed ? 'Loading...' : 'Refresh'}
+                  </button>
+                </div>
+
+                {/* Sort and Filter Controls */}
+                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                  {/* Sort Buttons */}
+                  <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                    {[
+                      { value: 'hot', label: '🔥 Hot' },
+                      { value: 'new', label: '🆕 New' },
+                      { value: 'top', label: '⬆️ Top' }
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => {
+                          setFeedSort(option.value);
+                          fetchPosts(option.value, feedSubmolt);
+                        }}
+                        className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${
+                          feedSort === option.value
+                            ? 'bg-white text-orange-600 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Submolt Filter */}
+                  <select
+                    value={feedSubmolt}
+                    onChange={(e) => {
+                      setFeedSubmolt(e.target.value);
+                      fetchPosts(feedSort, e.target.value);
+                    }}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white"
+                  >
+                    <option value="">All Submolts</option>
+                    {submolts.map(s => (
+                      <option key={s.name} value={s.name}>m/{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {loadingFeed && posts.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">Loading posts...</p>
+                ) : posts.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">No posts found. Check back later!</p>
+                ) : (
+                  <div className="space-y-3">
+                    {posts.map((post) => (
+                      <div
+                        key={post.id}
+                        onClick={() => openPost(post)}
+                        className="p-4 border border-gray-100 rounded-xl hover:border-orange-200 hover:bg-orange-50 cursor-pointer transition-all"
+                      >
+                        <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
+                          <span className="font-medium text-orange-600">m/{typeof post.submolt === 'object' ? post.submolt?.name : post.submolt}</span>
+                          <span>•</span>
+                          <span>by {post.author?.display_name || post.author?.name || (typeof post.author === 'string' ? post.author : 'Unknown')}</span>
+                        </div>
+                        <h3 className="font-semibold text-gray-800 mb-1">{post.title}</h3>
+                        {post.content && (
+                          <p className="text-gray-600 text-sm line-clamp-2">{post.content}</p>
+                        )}
+                        {post.url && (
+                          <p className="text-blue-600 text-sm truncate">{post.url}</p>
+                        )}
+                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                          <span>👍 {post.upvotes || 0}</span>
+                          <span>👎 {post.downvotes || 0}</span>
+                          <span>💬 {post.comment_count || 0}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
