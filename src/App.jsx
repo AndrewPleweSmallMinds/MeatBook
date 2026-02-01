@@ -23,7 +23,7 @@ const App = () => {
   const [postType, setPostType] = useState('text');
 
   // Feed and comments state
-  const [activeTab, setActiveTab] = useState('create'); // 'create' or 'feed'
+  const [activeTab, setActiveTab] = useState('create'); // 'create', 'feed', or 'myposts'
   const [posts, setPosts] = useState([]);
   const [selectedPost, setSelectedPost] = useState(null);
   const [comments, setComments] = useState([]);
@@ -32,6 +32,16 @@ const App = () => {
   const [loadingComments, setLoadingComments] = useState(false);
   const [feedSort, setFeedSort] = useState('hot'); // 'hot', 'new', 'top'
   const [feedSubmolt, setFeedSubmolt] = useState(''); // '' for all, or specific submolt name
+  const [feedPage, setFeedPage] = useState(1);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // My Posts state
+  const [myPosts, setMyPosts] = useState([]);
+  const [myPostsPage, setMyPostsPage] = useState(1);
+  const [hasMoreMyPosts, setHasMoreMyPosts] = useState(true);
+  const [loadingMyPosts, setLoadingMyPosts] = useState(false);
+  const [loadingMoreMyPosts, setLoadingMoreMyPosts] = useState(false);
 
   const BASE_URL = 'https://www.moltbook.com/api/v1';
 
@@ -270,14 +280,21 @@ const App = () => {
     setLoading(false);
   };
 
-  const fetchPosts = async (sort = feedSort, submolt = feedSubmolt) => {
-    console.log(`[API] fetchPosts: Starting request to /posts (sort=${sort}, submolt=${submolt || 'all'})`);
-    setLoadingFeed(true);
+  const fetchPosts = async (sort = feedSort, submolt = feedSubmolt, page = 1, append = false) => {
+    const offset = (page - 1) * 20;
+    console.log(`[API] fetchPosts: Starting request to /posts (sort=${sort}, submolt=${submolt || 'all'}, page=${page}, offset=${offset})`);
+
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoadingFeed(true);
+    }
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000);
 
-      const params = new URLSearchParams({ limit: '20', sort });
+      const params = new URLSearchParams({ limit: '20', sort, offset: String(offset) });
       if (submolt) params.append('submolt', submolt);
 
       const res = await fetch(`${BASE_URL}/posts?${params}`, {
@@ -291,7 +308,17 @@ const App = () => {
       if (res.ok) {
         const data = await res.json();
         console.log('[API] fetchPosts: Success', data);
-        setPosts(data.posts || data.data || []);
+        const newPosts = data.posts || data.data || [];
+
+        if (append) {
+          setPosts(prevPosts => [...prevPosts, ...newPosts]);
+        } else {
+          setPosts(newPosts);
+        }
+
+        // If we got fewer than 20 posts, there are no more pages
+        setHasMorePosts(newPosts.length >= 20);
+        setFeedPage(page);
       } else {
         console.log('[API] fetchPosts: Failed');
         showMessage('error', 'Failed to load posts');
@@ -303,6 +330,7 @@ const App = () => {
       }
     }
     setLoadingFeed(false);
+    setLoadingMore(false);
   };
 
   const fetchComments = async (postId) => {
@@ -403,6 +431,62 @@ const App = () => {
     setCommentContent('');
   };
 
+  const fetchMyPosts = async (page = 1, append = false) => {
+    if (!agentInfo?.name) {
+      console.log('[API] fetchMyPosts: No agent name available');
+      return;
+    }
+
+    const offset = (page - 1) * 20;
+    console.log(`[API] fetchMyPosts: Starting request for agent ${agentInfo.name} (page=${page}, offset=${offset})`);
+
+    if (append) {
+      setLoadingMoreMyPosts(true);
+    } else {
+      setLoadingMyPosts(true);
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
+
+      const params = new URLSearchParams({ limit: '20', offset: String(offset) });
+
+      const res = await fetch(`${BASE_URL}/agents/${agentInfo.name}/posts?${params}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      console.log(`[API] fetchMyPosts: Response status ${res.status}`);
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log('[API] fetchMyPosts: Success', data);
+        const newPosts = data.posts || data.data || [];
+
+        if (append) {
+          setMyPosts(prevPosts => [...prevPosts, ...newPosts]);
+        } else {
+          setMyPosts(newPosts);
+        }
+
+        setHasMoreMyPosts(newPosts.length >= 20);
+        setMyPostsPage(page);
+      } else {
+        console.log('[API] fetchMyPosts: Failed');
+        showMessage('error', 'Failed to load your posts');
+      }
+    } catch (e) {
+      console.error('[API] fetchMyPosts: Error', e.name, e.message);
+      if (e.name === 'AbortError') {
+        showMessage('error', 'Request timed out while loading your posts.');
+      }
+    }
+    setLoadingMyPosts(false);
+    setLoadingMoreMyPosts(false);
+  };
+
   const handleLogout = () => {
     setApiKey('');
     setIsAuthenticated(false);
@@ -413,6 +497,9 @@ const App = () => {
     setSelectedPost(null);
     setComments([]);
     setActiveTab('create');
+    setMyPosts([]);
+    setMyPostsPage(1);
+    setHasMoreMyPosts(true);
   };
 
   return (
@@ -590,26 +677,39 @@ const App = () => {
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setActiveTab('create')}
-                className={`flex-1 py-2 rounded-xl font-medium transition-all ${
+                className={`flex-1 py-2 rounded-xl font-medium transition-all text-sm ${
                   activeTab === 'create'
                     ? 'bg-orange-500 text-white'
                     : 'bg-white text-gray-600 hover:bg-gray-100 border border-orange-100'
                 }`}
               >
-                📝 Create Post
+                📝 Create
               </button>
               <button
                 onClick={() => {
                   setActiveTab('feed');
                   if (posts.length === 0) fetchPosts(feedSort, feedSubmolt);
                 }}
-                className={`flex-1 py-2 rounded-xl font-medium transition-all ${
+                className={`flex-1 py-2 rounded-xl font-medium transition-all text-sm ${
                   activeTab === 'feed'
                     ? 'bg-orange-500 text-white'
                     : 'bg-white text-gray-600 hover:bg-gray-100 border border-orange-100'
                 }`}
               >
-                📰 Browse Feed
+                📰 Feed
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('myposts');
+                  if (myPosts.length === 0) fetchMyPosts();
+                }}
+                className={`flex-1 py-2 rounded-xl font-medium transition-all text-sm ${
+                  activeTab === 'myposts'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-orange-100'
+                }`}
+              >
+                👤 My Posts
               </button>
             </div>
 
@@ -741,6 +841,14 @@ const App = () => {
                     <span>👍 {selectedPost.upvotes || 0}</span>
                     <span>👎 {selectedPost.downvotes || 0}</span>
                     <span>💬 {selectedPost.comment_count || 0}</span>
+                    <a
+                      href={`https://www.moltbook.com/m/${typeof selectedPost.submolt === 'object' ? selectedPost.submolt?.name : selectedPost.submolt}/posts/${selectedPost.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-orange-500 hover:text-orange-600 hover:underline ml-auto"
+                    >
+                      View on Moltbook →
+                    </a>
                   </div>
                 </div>
 
@@ -794,7 +902,7 @@ const App = () => {
                   )}
                 </div>
               </div>
-            ) : (
+            ) : activeTab === 'feed' ? (
               /* Feed View */
               <div className="bg-white rounded-2xl shadow-xl p-6 border border-orange-100">
                 <div className="flex items-center justify-between mb-4">
@@ -821,7 +929,9 @@ const App = () => {
                         key={option.value}
                         onClick={() => {
                           setFeedSort(option.value);
-                          fetchPosts(option.value, feedSubmolt);
+                          setFeedPage(1);
+                          setHasMorePosts(true);
+                          fetchPosts(option.value, feedSubmolt, 1, false);
                         }}
                         className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${
                           feedSort === option.value
@@ -839,7 +949,9 @@ const App = () => {
                     value={feedSubmolt}
                     onChange={(e) => {
                       setFeedSubmolt(e.target.value);
-                      fetchPosts(feedSort, e.target.value);
+                      setFeedPage(1);
+                      setHasMorePosts(true);
+                      fetchPosts(feedSort, e.target.value, 1, false);
                     }}
                     className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white"
                   >
@@ -855,36 +967,150 @@ const App = () => {
                 ) : posts.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">No posts found. Check back later!</p>
                 ) : (
-                  <div className="space-y-3">
-                    {posts.map((post) => (
-                      <div
-                        key={post.id}
-                        onClick={() => openPost(post)}
-                        className="p-4 border border-gray-100 rounded-xl hover:border-orange-200 hover:bg-orange-50 cursor-pointer transition-all"
-                      >
-                        <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-                          <span className="font-medium text-orange-600">m/{typeof post.submolt === 'object' ? post.submolt?.name : post.submolt}</span>
-                          <span>•</span>
-                          <span>by {post.author?.display_name || post.author?.name || (typeof post.author === 'string' ? post.author : 'Unknown')}</span>
+                  <>
+                    <div className="space-y-3">
+                      {posts.map((post) => (
+                        <div
+                          key={post.id}
+                          onClick={() => openPost(post)}
+                          className="p-4 border border-gray-100 rounded-xl hover:border-orange-200 hover:bg-orange-50 cursor-pointer transition-all"
+                        >
+                          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
+                            <span className="font-medium text-orange-600">m/{typeof post.submolt === 'object' ? post.submolt?.name : post.submolt}</span>
+                            <span>•</span>
+                            <span>by {post.author?.display_name || post.author?.name || (typeof post.author === 'string' ? post.author : 'Unknown')}</span>
+                          </div>
+                          <h3 className="font-semibold text-gray-800 mb-1">{post.title}</h3>
+                          {post.content && (
+                            <p className="text-gray-600 text-sm line-clamp-2">{post.content}</p>
+                          )}
+                          {post.url && (
+                            <p className="text-blue-600 text-sm truncate">{post.url}</p>
+                          )}
+                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                            <span>👍 {post.upvotes || 0}</span>
+                            <span>👎 {post.downvotes || 0}</span>
+                            <span>💬 {post.comment_count || 0}</span>
+                            <a
+                              href={`https://www.moltbook.com/m/${typeof post.submolt === 'object' ? post.submolt?.name : post.submolt}/posts/${post.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-orange-500 hover:text-orange-600 hover:underline ml-auto"
+                            >
+                              View on Moltbook →
+                            </a>
+                          </div>
                         </div>
-                        <h3 className="font-semibold text-gray-800 mb-1">{post.title}</h3>
-                        {post.content && (
-                          <p className="text-gray-600 text-sm line-clamp-2">{post.content}</p>
-                        )}
-                        {post.url && (
-                          <p className="text-blue-600 text-sm truncate">{post.url}</p>
-                        )}
-                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                          <span>👍 {post.upvotes || 0}</span>
-                          <span>👎 {post.downvotes || 0}</span>
-                          <span>💬 {post.comment_count || 0}</span>
-                        </div>
+                      ))}
+                    </div>
+
+                    {/* Load More Button */}
+                    {hasMorePosts && (
+                      <div className="mt-4 text-center">
+                        <button
+                          onClick={() => fetchPosts(feedSort, feedSubmolt, feedPage + 1, true)}
+                          disabled={loadingMore}
+                          className="bg-gray-100 text-gray-700 px-6 py-2 rounded-xl font-medium hover:bg-gray-200 transition-all disabled:opacity-50"
+                        >
+                          {loadingMore ? 'Loading...' : 'Load More Posts'}
+                        </button>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Showing {posts.length} posts (page {feedPage})
+                        </p>
                       </div>
-                    ))}
-                  </div>
+                    )}
+
+                    {!hasMorePosts && posts.length > 0 && (
+                      <p className="text-center text-gray-500 text-sm mt-4">
+                        No more posts to load
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
-            )}
+            ) : activeTab === 'myposts' ? (
+              /* My Posts View */
+              <div className="bg-white rounded-2xl shadow-xl p-6 border border-orange-100">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-gray-800">My Posts</h2>
+                  <button
+                    onClick={() => fetchMyPosts()}
+                    disabled={loadingMyPosts}
+                    className="text-orange-500 hover:text-orange-600 text-sm font-medium"
+                  >
+                    {loadingMyPosts ? 'Loading...' : 'Refresh'}
+                  </button>
+                </div>
+
+                {loadingMyPosts && myPosts.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">Loading your posts...</p>
+                ) : myPosts.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">You haven't posted anything yet. Create your first post!</p>
+                ) : (
+                  <>
+                    <div className="space-y-3">
+                      {myPosts.map((post) => (
+                        <div
+                          key={post.id}
+                          onClick={() => openPost(post)}
+                          className="p-4 border border-gray-100 rounded-xl hover:border-orange-200 hover:bg-orange-50 cursor-pointer transition-all"
+                        >
+                          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
+                            <span className="font-medium text-orange-600">m/{typeof post.submolt === 'object' ? post.submolt?.name : post.submolt}</span>
+                            <span>•</span>
+                            <span>{post.created_at ? new Date(post.created_at).toLocaleDateString() : ''}</span>
+                          </div>
+                          <h3 className="font-semibold text-gray-800 mb-1">{post.title}</h3>
+                          {post.content && (
+                            <p className="text-gray-600 text-sm line-clamp-2">{post.content}</p>
+                          )}
+                          {post.url && (
+                            <p className="text-blue-600 text-sm truncate">{post.url}</p>
+                          )}
+                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                            <span>👍 {post.upvotes || 0}</span>
+                            <span>👎 {post.downvotes || 0}</span>
+                            <span>💬 {post.comment_count || 0}</span>
+                            <a
+                              href={`https://www.moltbook.com/m/${typeof post.submolt === 'object' ? post.submolt?.name : post.submolt}/posts/${post.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-orange-500 hover:text-orange-600 hover:underline ml-auto"
+                            >
+                              View on Moltbook →
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Load More Button */}
+                    {hasMoreMyPosts && (
+                      <div className="mt-4 text-center">
+                        <button
+                          onClick={() => fetchMyPosts(myPostsPage + 1, true)}
+                          disabled={loadingMoreMyPosts}
+                          className="bg-gray-100 text-gray-700 px-6 py-2 rounded-xl font-medium hover:bg-gray-200 transition-all disabled:opacity-50"
+                        >
+                          {loadingMoreMyPosts ? 'Loading...' : 'Load More Posts'}
+                        </button>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Showing {myPosts.length} posts (page {myPostsPage})
+                        </p>
+                      </div>
+                    )}
+
+                    {!hasMoreMyPosts && myPosts.length > 0 && (
+                      <p className="text-center text-gray-500 text-sm mt-4">
+                        No more posts to load
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : null}
           </>
         )}
 
