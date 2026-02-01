@@ -94,7 +94,8 @@ const App = () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000);
 
-      const res = await fetch(`${BASE_URL}/submolts`, {
+      // Request a high limit to get all submolts
+      const res = await fetch(`${BASE_URL}/submolts?limit=100`, {
         headers: { 'Authorization': `Bearer ${key}` },
         signal: controller.signal
       });
@@ -104,8 +105,10 @@ const App = () => {
 
       if (res.ok) {
         const data = await res.json();
-        console.log('[API] fetchSubmolts: Success', data);
-        setSubmolts(data.submolts || data.data || []);
+        console.log('[API] fetchSubmolts: Success, received', data);
+        const submoltsList = data.submolts || data.data || [];
+        console.log('[API] fetchSubmolts: Found', submoltsList.length, 'submolts:', submoltsList.map(s => s.name));
+        setSubmolts(submoltsList);
       } else {
         console.log('[API] fetchSubmolts: Failed - response not ok');
       }
