@@ -824,7 +824,7 @@ const App = () => {
                     <span>👎 {selectedPost.downvotes || 0}</span>
                     <span>💬 {selectedPost.comment_count || 0}</span>
                     <a
-                      href={`https://www.moltbook.com/m/${typeof selectedPost.submolt === 'object' ? selectedPost.submolt?.name : selectedPost.submolt}/posts/${selectedPost.id}`}
+                      href={`https://www.moltbook.com/post/${selectedPost.id}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-orange-500 hover:text-orange-600 hover:underline ml-auto"
@@ -974,7 +974,7 @@ const App = () => {
                             <span>👎 {post.downvotes || 0}</span>
                             <span>💬 {post.comment_count || 0}</span>
                             <a
-                              href={`https://www.moltbook.com/m/${typeof post.submolt === 'object' ? post.submolt?.name : post.submolt}/posts/${post.id}`}
+                              href={`https://www.moltbook.com/post/${post.id}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
@@ -1055,7 +1055,7 @@ const App = () => {
                             <span>👎 {post.downvotes || 0}</span>
                             <span>💬 {post.comment_count || 0}</span>
                             <a
-                              href={`https://www.moltbook.com/m/${typeof post.submolt === 'object' ? post.submolt?.name : post.submolt}/posts/${post.id}`}
+                              href={`https://www.moltbook.com/post/${post.id}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
