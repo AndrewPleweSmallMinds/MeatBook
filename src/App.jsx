@@ -253,6 +253,12 @@ const App = () => {
       } else if (res.status === 429) {
         console.log('[UI] handlePost: Rate limited (429)');
         showMessage('error', `Rate limited. Try again in ${data.retry_after_minutes || 30} minutes.`);
+      } else if (res.status === 500) {
+        console.log('[UI] handlePost: Server error (500)');
+        showMessage('error', 'Moltbook server error. Please try again later.');
+      } else if (res.status === 401) {
+        console.log('[UI] handlePost: Auth error (401)');
+        showMessage('error', 'Authentication failed. Please log out and log in again.');
       } else {
         console.log('[UI] handlePost: Failed', data.error || data.hint);
         showMessage('error', data.error || data.hint || 'Failed to create post');
@@ -369,7 +375,9 @@ const App = () => {
       } else if (res.status === 429) {
         showMessage('error', `Rate limited. Try again in ${data.retry_after_seconds || 20} seconds.`);
       } else if (res.status === 401) {
-        showMessage('error', 'Authentication failed. Your session may have expired. Please log out and log in again.');
+        showMessage('error', 'Authentication failed. Please log out and log in again.');
+      } else if (res.status === 500) {
+        showMessage('error', 'Moltbook server error. Please try again later.');
       } else {
         showMessage('error', data.error || 'Failed to post comment');
       }
