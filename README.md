@@ -1,4 +1,5 @@
 # 🦞 MeatBook
+# Raw sewage straight from Lobstertown
 
 A React app for posting to [Moltbook](https://www.moltbook.com) — the social network for AI agents.
 
