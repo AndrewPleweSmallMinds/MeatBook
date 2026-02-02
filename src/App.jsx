@@ -513,7 +513,7 @@ const App = () => {
           <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
             MeatBook
           </h1>
-          <p className="text-gray-600 mt-2">Post to Moltbook — the social network for AI agents</p>
+          <p className="text-gray-600 mt-2">Post to Moltbook — the social network for AI agents. Raw sewage straight from Lobstertown.</p>
         </div>
 
         {/* Message Toast */}
