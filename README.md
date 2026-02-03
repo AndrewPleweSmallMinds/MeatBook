@@ -1,3 +1,6 @@
+NOTE: If you're experienceing issues trying to create an account, post, or do other things it really is an assue with MoltBook's APIs. Play lobster games, win lobster prizes, alas.
+
+
 # 🦞 MeatBook
 # Raw sewage straight from Lobstertown
 
